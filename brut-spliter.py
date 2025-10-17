@@ -12,106 +12,161 @@ import subprocess
 import tempfile
 import shutil
 from pathlib import Path
+from typing import List, Tuple, Optional, TextIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import signal
 
 class WordlistSplitter:
-    def __init__(self, wordlist_path, num_splits, placeholder="<%WORDLIST%>", stop_on_success=None, output_file=None):
+    def __init__(
+        self, 
+        wordlist_path: str, 
+        num_splits: int, 
+        placeholder: str = "<%WORDLIST%>", 
+        stop_on_success: Optional[str] = None, 
+        output_file: Optional[str] = None
+    ) -> None:
         self.wordlist_path = Path(wordlist_path)
         self.num_splits = num_splits
         self.placeholder = placeholder
         self.stop_on_success = stop_on_success
         self.output_file = output_file
-        self.temp_dir = None
-        self.split_files = []
-        self.processes = []
+        self.temp_dir: Optional[str] = None
+        self.split_files: List[str] = []
+        self.processes: List[subprocess.Popen] = []
         self.success_found = False
-        self.output_handle = None
+        self.output_handle: Optional[TextIO] = None
         
-        # Open output file if specified
+        self._open_output_file()
+        
+    def _open_output_file(self) -> None:
+        """Open output file if specified"""
         if self.output_file:
             try:
                 self.output_handle = open(self.output_file, 'w', encoding='utf-8')
             except Exception as e:
-                print(f"[✗] Error opening output file: {e}")
+                self.log(f"[✗] Error opening output file: {e}")
                 self.output_handle = None
         
-    def __enter__(self):
+    def __enter__(self) -> 'WordlistSplitter':
         return self
         
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.cleanup()
+        self._close_output_file()
     
-    def cleanup(self):
+    def _close_output_file(self) -> None:
+        """Close output file if open"""
+        if self.output_handle is not None:
+            try:
+                self.output_handle.close()
+            except IOError as e:
+                self.log(f"[!] Warning: Failed to close output file: {e}")
+    
+    def log(self, message: str) -> None:
+        """Print message to console and optionally to output file"""
+        print(message)
+        if self.output_handle is not None:
+            try:
+                self.output_handle.write(message + '\n')
+                self.output_handle.flush()
+            except IOError as e:
+                print(f"[!] Warning: Failed to write to output file: {e}")
+    
+    def cleanup(self) -> None:
         """Clean up temporary files and processes"""
-        # Terminate running processes
+        self._terminate_processes()
+        self._remove_temp_files()
+    
+    def _terminate_processes(self) -> None:
+        """Terminate all running processes"""
         for proc in self.processes:
             try:
                 proc.terminate()
                 proc.wait(timeout=5)
-            except:
+            except subprocess.TimeoutExpired:
                 try:
                     proc.kill()
-                except:
-                    pass
+                    self.log(f"[!] Warning: Process had to be forcefully killed")
+                except Exception as e:
+                    self.log(f"[!] Warning: Failed to kill process: {e}")
+            except Exception as e:
+                self.log(f"[!] Warning: Failed to terminate process: {e}")
         
-        # Clear process list
         self.processes = []
-        
-        # Remove temporary files
+    
+    def _remove_temp_files(self) -> None:
+        """Remove temporary directory and files"""
         if self.temp_dir and os.path.exists(self.temp_dir):
             try:
                 shutil.rmtree(self.temp_dir)
-            except:
-                pass
+            except Exception as e:
+                self.log(f"[!] Warning: Failed to remove temporary files: {e}")
     
-    def split_wordlist(self):
-        """Divide the wordlist into N temporary files"""
+    def split_wordlist(self) -> List[str]:
+        """Divide the wordlist into N temporary files using round-robin distribution"""
         if not self.wordlist_path.exists():
             raise FileNotFoundError(f"Wordlist not found: {self.wordlist_path}")
         
-        # Create a temporary directory
         self.temp_dir = tempfile.mkdtemp(prefix="bf_split_")
         
-        print(f"[*] Reading wordlist: {self.wordlist_path}")
+        self.log(f"[*] Reading wordlist: {self.wordlist_path}")
         
-        # Read all lines
-        with open(self.wordlist_path, 'r', encoding='utf-8', errors='ignore') as f:
-            lines = f.readlines()
+        total_lines = self._count_lines()
+        self.log(f"[*] Total lines: {total_lines}")
+        self.log(f"[*] Splitting into {self.num_splits} parts using round-robin distribution")
         
-        total_lines = len(lines)
-        lines_per_split = (total_lines + self.num_splits - 1) // self.num_splits
-        
-        print(f"[*] Total lines: {total_lines}")
-        print(f"[*] Splitting into {self.num_splits} parts (~{lines_per_split} lines each)")
-        
-        # Create split files
-        for i in range(self.num_splits):
-            start_idx = i * lines_per_split
-            end_idx = min((i + 1) * lines_per_split, total_lines)
-            
-            if start_idx >= total_lines:
-                break
-            
-            split_file = os.path.join(self.temp_dir, f"wordlist_part_{i+1}.txt")
-            with open(split_file, 'w', encoding='utf-8') as f:
-                f.writelines(lines[start_idx:end_idx])
-            
-            self.split_files.append(split_file)
-            print(f"[+] Created: {split_file} ({end_idx - start_idx} lines)")
+        self._create_split_files()
+        self._distribute_lines()
+        self._display_split_stats()
         
         return self.split_files
     
-    def execute_command(self, command_template, split_file, index):
-        """Execute a command with a split wordlist"""
-        # Replace placeholder with the split file path
-        command = command_template.replace(self.placeholder, split_file)
-        
-        print(f"\n[*] Starting attack #{index + 1}")
-        print(f"[>] Command: {command}")
+    def _count_lines(self) -> int:
+        """Count total lines in wordlist"""
+        with open(self.wordlist_path, 'r', encoding='utf-8', errors='ignore') as f:
+            return sum(1 for _ in f)
+    
+    def _create_split_files(self) -> None:
+        """Initialize split file paths"""
+        if self.temp_dir is None:
+            raise RuntimeError("Temporary directory not initialized")
+            
+        for i in range(self.num_splits):
+            split_file = os.path.join(self.temp_dir, f"wordlist_part_{i+1}.txt")
+            self.split_files.append(split_file)
+    
+    def _distribute_lines(self) -> None:
+        """Distribute wordlist lines using round-robin"""
+        split_handles = [open(f, 'w', encoding='utf-8') for f in self.split_files]
         
         try:
-            # Launch the process
+            with open(self.wordlist_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for idx, line in enumerate(f):
+                    split_index = idx % self.num_splits
+                    split_handles[split_index].write(line)
+        finally:
+            for handle in split_handles:
+                handle.close()
+    
+    def _display_split_stats(self) -> None:
+        """Display statistics for each split file"""
+        for i, split_file in enumerate(self.split_files):
+            lines_count = self._count_file_lines(split_file)
+            self.log(f"[+] Created: {split_file} ({lines_count} lines)")
+    
+    def _count_file_lines(self, filepath: str) -> int:
+        """Count lines in a file"""
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            return sum(1 for _ in f)
+    
+    def execute_command(self, command_template: str, split_file: str, index: int) -> Tuple[int, int]:
+        """Execute a command with a split wordlist"""
+        command = command_template.replace(self.placeholder, split_file)
+        
+        self.log(f"\n[*] Starting attack #{index + 1}")
+        self.log(f"[>] Command: {command}")
+        
+        try:
             proc = subprocess.Popen(
                 command,
                 shell=True,
@@ -122,39 +177,52 @@ class WordlistSplitter:
             
             self.processes.append(proc)
             
-            # Display output in real-time
-            for line in proc.stdout:
-                print(f"[#{index + 1}] {line.rstrip()}")
-                
-                # Check if success string is found
-                if self.stop_on_success and self.stop_on_success in line:
-                    print(f"\n[!] SUCCESS STRING FOUND in attack #{index + 1}!")
-                    print(f"[!] String detected: '{self.stop_on_success}'")
-                    print(f"[!] Stopping all attacks...")
-                    self.success_found = True
-                    
-                    # Terminate all running processes
-                    self.cleanup()
-                    break
-                
-                # Check if another attack found success
-                if self.success_found:
-                    break
-            
-            proc.wait()
-            
-            if proc.returncode == 0:
-                print(f"[✓] Attack #{index + 1} completed successfully")
-            else:
-                print(f"[!] Attack #{index + 1} completed with code: {proc.returncode}")
-            
-            return index, proc.returncode
+            return self._monitor_process_output(proc, index)
             
         except Exception as e:
-            print(f"[✗] Error executing attack #{index + 1}: {e}")
+            self.log(f"[✗] Error executing attack #{index + 1}: {e}")
             return index, -1
     
-    def run_parallel(self, command_template, max_workers=None):
+    def _monitor_process_output(self, proc: subprocess.Popen, index: int) -> Tuple[int, int]:
+        """Monitor process output and check for success string"""
+        if proc.stdout is None:
+            self.log(f"[!] Warning: No stdout available for attack #{index + 1}")
+            return index, -1
+            
+        for line in proc.stdout:
+            output_line = f"[#{index + 1}] {line.rstrip()}"
+            self.log(output_line)
+            
+            if self._check_success_string(line, index):
+                break
+            
+            if self.success_found:
+                break
+        
+        proc.wait()
+        self._log_completion_status(index, proc.returncode)
+        
+        return index, proc.returncode
+    
+    def _check_success_string(self, line: str, index: int) -> bool:
+        """Check if success string is found in output line"""
+        if self.stop_on_success and self.stop_on_success in line:
+            self.log(f"\n[!] SUCCESS STRING FOUND in attack #{index + 1}!")
+            self.log(f"[!] String detected: '{self.stop_on_success}'")
+            self.log(f"[!] Stopping all attacks...")
+            self.success_found = True
+            self.cleanup()
+            return True
+        return False
+    
+    def _log_completion_status(self, index: int, returncode: int) -> None:
+        """Log attack completion status"""
+        if returncode == 0:
+            self.log(f"[✓] Attack #{index + 1} completed successfully")
+        else:
+            self.log(f"[!] Attack #{index + 1} completed with code: {returncode}")
+    
+    def run_parallel(self, command_template: str, max_workers: Optional[int] = None) -> List[Tuple[int, int]]:
         """Launch all attacks in parallel"""
         if not self.split_files:
             raise RuntimeError("Wordlists have not been split. Call split_wordlist() first.")
@@ -162,7 +230,7 @@ class WordlistSplitter:
         if max_workers is None:
             max_workers = min(self.num_splits, os.cpu_count() or 4)
         
-        print(f"\n[*] Launching {len(self.split_files)} parallel attacks (max {max_workers} simultaneous)")
+        self.log(f"\n[*] Launching {len(self.split_files)} parallel attacks (max {max_workers} simultaneous)")
         
         results = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -177,33 +245,102 @@ class WordlistSplitter:
         
         return results
     
-    def run_sequential(self, command_template):
+    def run_sequential(self, command_template: str) -> List[Tuple[int, int]]:
         """Launch all attacks sequentially"""
         if not self.split_files:
             raise RuntimeError("Wordlists have not been split. Call split_wordlist() first.")
         
-        print(f"\n[*] Launching {len(self.split_files)} sequential attacks")
+        self.log(f"\n[*] Launching {len(self.split_files)} sequential attacks")
         
         results = []
         for i, split_file in enumerate(self.split_files):
             index, returncode = self.execute_command(command_template, split_file, i)
             results.append((index, returncode))
             
-            # Stop if success was found
             if self.success_found:
-                print(f"[!] Stopping sequential execution due to success string found")
+                self.log(f"[!] Stopping sequential execution due to success string found")
                 break
         
         return results
 
 
-def signal_handler(sig, frame):
+def signal_handler(sig: int, frame) -> None:
     """Handler to interrupt cleanly with Ctrl+C"""
     print("\n[!] Interruption detected. Cleaning up...")
     sys.exit(0)
 
 
-def main():
+def display_header() -> None:
+    """Display application header"""
+    print("=" * 70)
+    print("  Bruteforce Wordlist Splitter")
+    print("=" * 70)
+
+
+def display_config(args: argparse.Namespace) -> None:
+    """Display configuration information"""
+    if args.looking_for:
+        print(f"[!] Auto-stop enabled: will stop all attacks when '{args.looking_for}' is found")
+    
+    if args.output:
+        print(f"[!] Output will be saved to: {args.output}")
+        
+    if args.looking_for or args.output:
+        print()
+
+
+def display_summary(
+    splitter: WordlistSplitter, 
+    results: List[Tuple[int, int]], 
+    args: argparse.Namespace
+) -> None:
+    """Display attack summary"""
+    print("\n" + "=" * 70)
+    print("  Attack Summary")
+    print("=" * 70)
+    
+    if splitter.success_found:
+        msg = f"[!] ALL ATTACKS STOPPED - Success string '{args.looking_for}' was found!"
+        print(msg)
+        if splitter.output_handle is not None:
+            splitter.output_handle.write(msg + '\n')
+        print()
+    
+    success_count = sum(1 for _, rc in results if rc == 0)
+    failed_count = len(results) - success_count
+    
+    summary_lines = [
+        f"[*] Total attacks: {len(results)}",
+        f"[✓] Successful: {success_count}",
+        f"[✗] Failed: {failed_count}"
+    ]
+    
+    for line in summary_lines:
+        print(line)
+        if splitter.output_handle is not None:
+            splitter.output_handle.write(line + '\n')
+    
+    for index, returncode in sorted(results):
+        status = "✓" if returncode == 0 else "✗"
+        line = f"  [{status}] Attack #{index + 1}: return code {returncode}"
+        print(line)
+        if splitter.output_handle is not None:
+            splitter.output_handle.write(line + '\n')
+
+
+def validate_arguments(args: argparse.Namespace) -> None:
+    """Validate command line arguments"""
+    if args.placeholder not in args.command:
+        print(f"[✗] Error: The placeholder '{args.placeholder}' is not present in the command")
+        print(f"[i] Provided command: {args.command}")
+        sys.exit(1)
+    
+    if args.split < 1:
+        print("[✗] Error: Number of splits must be >= 1")
+        sys.exit(1)
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Split bruteforce attacks into multiple parallel sub-attacks",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -227,6 +364,12 @@ Usage examples:
   
   # Auto-stop when success string is found
   %(prog)s -c "netexec smb 10.10.10.10 -u users.txt -p <%WORDLIST%>" -w pass.txt -s 10 -lf "STATUS_LOGON_SUCCESS"
+  
+  # Save all output to a file
+  %(prog)s -c "hydra -L users.txt -P <%WORDLIST%> ssh://10.10.10.10" -w rockyou.txt -s 5 -o output.txt
+  
+  # Combine auto-stop and output file
+  %(prog)s -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" -w pass.txt -s 8 -lf "SUCCESS" -o results.txt
         """
     )
     
@@ -272,60 +415,29 @@ Usage examples:
         help='Stop all attacks when this string is found in output (e.g., "STATUS_LOGON_SUCCESS")'
     )
     
+    parser.add_argument(
+        '-o', '--output',
+        help='Save all output to a file (e.g., "output.txt")'
+    )
+    
     args = parser.parse_args()
     
-    # Check that placeholder is in the command
-    if args.placeholder not in args.command:
-        print(f"[✗] Error: The placeholder '{args.placeholder}' is not present in the command")
-        print(f"[i] Provided command: {args.command}")
-        sys.exit(1)
-    
-    # Check that number of splits is valid
-    if args.split < 1:
-        print("[✗] Error: Number of splits must be >= 1")
-        sys.exit(1)
-    
-    # Handle interruption cleanly
+    validate_arguments(args)
     signal.signal(signal.SIGINT, signal_handler)
     
-    print("=" * 70)
-    print("  Bruteforce Wordlist Splitter")
-    print("=" * 70)
-    
-    if args.looking_for:
-        print(f"[!] Auto-stop enabled: will stop all attacks when '{args.looking_for}' is found")
-        print()
+    display_header()
+    display_config(args)
     
     try:
-        with WordlistSplitter(args.wordlist, args.split, args.placeholder, args.looking_for) as splitter:
-            # Split the wordlist
+        with WordlistSplitter(args.wordlist, args.split, args.placeholder, args.looking_for, args.output) as splitter:
             splitter.split_wordlist()
             
-            # Launch attacks
             if args.sequential:
                 results = splitter.run_sequential(args.command)
             else:
                 results = splitter.run_parallel(args.command, args.max_workers)
             
-            # Display summary
-            print("\n" + "=" * 70)
-            print("  Attack Summary")
-            print("=" * 70)
-            
-            if splitter.success_found:
-                print(f"[!] ALL ATTACKS STOPPED - Success string '{args.looking_for}' was found!")
-                print()
-            
-            success_count = sum(1 for _, rc in results if rc == 0)
-            failed_count = len(results) - success_count
-            
-            print(f"[*] Total attacks: {len(results)}")
-            print(f"[✓] Successful: {success_count}")
-            print(f"[✗] Failed: {failed_count}")
-            
-            for index, returncode in sorted(results):
-                status = "✓" if returncode == 0 else "✗"
-                print(f"  [{status}] Attack #{index + 1}: return code {returncode}")
+            display_summary(splitter, results, args)
     
     except KeyboardInterrupt:
         print("\n[!] Interrupted by user")
@@ -335,6 +447,9 @@ Usage examples:
         sys.exit(1)
     
     print("\n[*] Done!")
+    
+    if args.output:
+        print(f"[*] Output saved to: {args.output}")
 
 
 if __name__ == "__main__":
