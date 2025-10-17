@@ -29,11 +29,11 @@ Bruteforce Wordlist Splitter allows you to divide a large wordlist into multiple
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/bruteforce-wordlist-splitter.git
-cd bruteforce-wordlist-splitter
+git clone https://github.com/Claquetteuuuh/brut-spliter.git
+cd brut-spliter
 
 # Make the script executable
-chmod +x spliter.py
+chmod +x brute-spliter.py
 ```
 
 **Requirements**: Python 3.6+
@@ -43,7 +43,7 @@ chmod +x spliter.py
 ### Basic syntax
 
 ```bash
-python3 spliter.py -c "COMMAND <%WORDLIST%>" -w WORDLIST -s NUMBER_OF_SPLITS
+python3 brute-spliter.py -c "COMMAND <%WORDLIST%>" -w WORDLIST -s NUMBER_OF_SPLITS
 ```
 
 ### Parameters
@@ -65,65 +65,65 @@ python3 spliter.py -c "COMMAND <%WORDLIST%>" -w WORDLIST -s NUMBER_OF_SPLITS
 
 ```bash
 # SMB bruteforce with 10 splits
-python3 spliter.py -c "netexec smb 10.10.10.10 --continue-on-success --no-bruteforce -u users.txt -p <%WORDLIST%>" -w /usr/share/wordlists/rockyou.txt -s 10
+python3 brute-spliter.py -c "netexec smb 10.10.10.10 --continue-on-success --no-bruteforce -u users.txt -p <%WORDLIST%>" -w /usr/share/wordlists/rockyou.txt -s 10
 
 # Auto-stop when login succeeds
-python3 spliter.py -c "netexec smb 192.168.1.0/24 -u admin -p <%WORDLIST%>" -w passwords.txt -s 5 -lf "STATUS_LOGON_SUCCESS"
+python3 brute-spliter.py -c "netexec smb 192.168.1.0/24 -u admin -p <%WORDLIST%>" -w passwords.txt -s 5 -lf "STATUS_LOGON_SUCCESS"
 
 # Save output to file
-python3 spliter.py -c "netexec smb 10.10.10.10 -u users.txt -p <%WORDLIST%>" -w rockyou.txt -s 8 -o netexec_results.txt
+python3 brute-spliter.py -c "netexec smb 10.10.10.10 -u users.txt -p <%WORDLIST%>" -w rockyou.txt -s 8 -o netexec_results.txt
 
 # Combine auto-stop and logging
-python3 spliter.py -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" -w passwords.txt -s 10 -lf "STATUS_LOGON_SUCCESS" -o output.txt
+python3 brute-spliter.py -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" -w passwords.txt -s 10 -lf "STATUS_LOGON_SUCCESS" -o output.txt
 ```
 
 ### Hydra
 
 ```bash
 # SSH bruteforce
-python3 spliter.py -c "hydra -L users.txt -P <%WORDLIST%> ssh://192.168.1.100" -w /usr/share/wordlists/rockyou.txt -s 8
+python3 brute-spliter.py -c "hydra -L users.txt -P <%WORDLIST%> ssh://192.168.1.100" -w /usr/share/wordlists/rockyou.txt -s 8
 
 # FTP bruteforce with auto-stop
-python3 spliter.py -c "hydra -l admin -P <%WORDLIST%> ftp://10.10.10.10" -w passwords.txt -s 4 -lf "password:"
+python3 brute-spliter.py -c "hydra -l admin -P <%WORDLIST%> ftp://10.10.10.10" -w passwords.txt -s 4 -lf "password:"
 
 # RDP with output logging
-python3 spliter.py -c "hydra -l administrator -P <%WORDLIST%> rdp://192.168.1.50" -w rockyou.txt -s 6 -o hydra_rdp.txt
+python3 brute-spliter.py -c "hydra -l administrator -P <%WORDLIST%> rdp://192.168.1.50" -w rockyou.txt -s 6 -o hydra_rdp.txt
 ```
 
 ### John the Ripper
 
 ```bash
 # Crack a hash with split wordlist
-python3 spliter.py -c "john --wordlist=<%WORDLIST%> hashes.txt" -w /usr/share/wordlists/rockyou.txt -s 6
+python3 brute-spliter.py -c "john --wordlist=<%WORDLIST%> hashes.txt" -w /usr/share/wordlists/rockyou.txt -s 6
 
 # With rules and logging
-python3 spliter.py -c "john --wordlist=<%WORDLIST%> --rules=best64 hashes.txt" -w passwords.txt -s 4 -o john_output.txt
+python3 brute-spliter.py -c "john --wordlist=<%WORDLIST%> --rules=best64 hashes.txt" -w passwords.txt -s 4 -o john_output.txt
 
 # Auto-stop when hash is cracked
-python3 spliter.py -c "john --wordlist=<%WORDLIST%> hash.txt" -w rockyou.txt -s 8 -lf "cracked"
+python3 brute-spliter.py -c "john --wordlist=<%WORDLIST%> hash.txt" -w rockyou.txt -s 8 -lf "cracked"
 ```
 
 ### Hashcat
 
 ```bash
 # MD5 hash cracking
-python3 spliter.py -c "hashcat -m 0 -a 0 hash.txt <%WORDLIST%>" -w /usr/share/wordlists/rockyou.txt -s 8
+python3 brute-spliter.py -c "hashcat -m 0 -a 0 hash.txt <%WORDLIST%>" -w /usr/share/wordlists/rockyou.txt -s 8
 
 # NTLM hashes with auto-stop
-python3 spliter.py -c "hashcat -m 1000 -a 0 ntlm.txt <%WORDLIST%> --force" -w passwords.txt -s 10 -lf "Cracked"
+python3 brute-spliter.py -c "hashcat -m 1000 -a 0 ntlm.txt <%WORDLIST%> --force" -w passwords.txt -s 10 -lf "Cracked"
 
 # SHA256 with logging
-python3 spliter.py -c "hashcat -m 1400 -a 0 sha256.txt <%WORDLIST%>" -w rockyou.txt -s 12 -o hashcat_results.txt
+python3 brute-spliter.py -c "hashcat -m 1400 -a 0 sha256.txt <%WORDLIST%>" -w rockyou.txt -s 12 -o hashcat_results.txt
 ```
 
 ### Medusa
 
 ```bash
 # MySQL bruteforce
-python3 spliter.py -c "medusa -h 10.10.10.10 -u root -P <%WORDLIST%> -M mysql" -w rockyou.txt -s 8
+python3 brute-spliter.py -c "medusa -h 10.10.10.10 -u root -P <%WORDLIST%> -M mysql" -w rockyou.txt -s 8
 
 # SSH with auto-stop and logging
-python3 spliter.py -c "medusa -h 192.168.1.100 -u admin -P <%WORDLIST%> -M ssh" -w passwords.txt -s 5 -lf "SUCCESS" -o medusa_ssh.txt
+python3 brute-spliter.py -c "medusa -h 192.168.1.100 -u admin -P <%WORDLIST%> -M ssh" -w passwords.txt -s 5 -lf "SUCCESS" -o medusa_ssh.txt
 ```
 
 ## 🎛️ Advanced Options
@@ -134,15 +134,15 @@ Stop all attacks immediately when a success string is detected in the output:
 
 ```bash
 # NetExec - stops when login succeeds
-python3 spliter.py -c "netexec smb 10.10.10.10 -u users.txt -p <%WORDLIST%>" \
+python3 brute-spliter.py -c "netexec smb 10.10.10.10 -u users.txt -p <%WORDLIST%>" \
   -w rockyou.txt -s 10 -lf "STATUS_LOGON_SUCCESS"
 
 # Hydra - stops when password is found
-python3 spliter.py -c "hydra -l admin -P <%WORDLIST%> ssh://10.10.10.10" \
+python3 brute-spliter.py -c "hydra -l admin -P <%WORDLIST%> ssh://10.10.10.10" \
   -w passwords.txt -s 8 -lf "password:"
 
 # Custom success indicator
-python3 spliter.py -c "custom_tool --wordlist <%WORDLIST%>" \
+python3 brute-spliter.py -c "custom_tool --wordlist <%WORDLIST%>" \
   -w wordlist.txt -s 5 -lf "FOUND"
 ```
 
@@ -152,11 +152,11 @@ Save all execution output (commands, results, summary) to a file:
 
 ```bash
 # Basic logging
-python3 spliter.py -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" \
+python3 brute-spliter.py -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" \
   -w passwords.txt -s 5 -o results.txt
 
 # Combine with auto-stop
-python3 spliter.py -c "hydra -l admin -P <%WORDLIST%> ssh://10.10.10.10" \
+python3 brute-spliter.py -c "hydra -l admin -P <%WORDLIST%> ssh://10.10.10.10" \
   -w rockyou.txt -s 10 -lf "password:" -o hydra_output.txt
 ```
 
@@ -171,7 +171,7 @@ The output file will contain:
 Execute attacks one at a time instead of in parallel:
 
 ```bash
-python3 spliter.py -c "john --wordlist=<%WORDLIST%> hash.txt" \
+python3 brute-spliter.py -c "john --wordlist=<%WORDLIST%> hash.txt" \
   -w rockyou.txt -s 10 --sequential
 ```
 
@@ -186,7 +186,7 @@ Control the number of simultaneous attacks:
 
 ```bash
 # Split into 20 but only 5 run at once
-python3 spliter.py -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" \
+python3 brute-spliter.py -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" \
   -w rockyou.txt -s 20 --max-workers 5
 ```
 
@@ -195,7 +195,7 @@ python3 spliter.py -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" \
 Use a different placeholder than `<%WORDLIST%>`:
 
 ```bash
-python3 spliter.py -c "hydra -l admin -P {WORDLIST} ssh://10.10.10.10" \
+python3 brute-spliter.py -c "hydra -l admin -P {WORDLIST} ssh://10.10.10.10" \
   -w passwords.txt -s 5 -p "{WORDLIST}"
 ```
 
@@ -237,7 +237,7 @@ At the end of execution, you get a complete summary:
 
 ```bash
 # Test common passwords against multiple users
-python3 spliter.py \
+python3 brute-spliter.py \
   -c "netexec smb 10.10.10.0/24 -u users.txt -p <%WORDLIST%> --continue-on-success" \
   -w common_passwords.txt \
   -s 5 \
@@ -249,7 +249,7 @@ python3 spliter.py \
 
 ```bash
 # Crack hashes as fast as possible
-python3 spliter.py \
+python3 brute-spliter.py \
   -c "hashcat -m 1000 -a 0 ntlm_hashes.txt <%WORDLIST%> --force" \
   -w /usr/share/wordlists/rockyou.txt \
   -s 16 \
@@ -261,7 +261,7 @@ python3 spliter.py \
 
 ```bash
 # Limit to 3 simultaneous connections to avoid detection
-python3 spliter.py \
+python3 brute-spliter.py \
   -c "hydra -l admin -P <%WORDLIST%> ssh://192.168.1.100 -t 4" \
   -w passwords.txt \
   -s 10 \
