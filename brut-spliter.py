@@ -16,13 +16,25 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import signal
 
 class WordlistSplitter:
-    def __init__(self, wordlist_path, num_splits, placeholder="<%WORDLIST%>"):
+    def __init__(self, wordlist_path, num_splits, placeholder="<%WORDLIST%>", stop_on_success=None, output_file=None):
         self.wordlist_path = Path(wordlist_path)
         self.num_splits = num_splits
         self.placeholder = placeholder
+        self.stop_on_success = stop_on_success
+        self.output_file = output_file
         self.temp_dir = None
         self.split_files = []
         self.processes = []
+        self.success_found = False
+        self.output_handle = None
+        
+        # Open output file if specified
+        if self.output_file:
+            try:
+                self.output_handle = open(self.output_file, 'w', encoding='utf-8')
+            except Exception as e:
+                print(f"[✗] Error opening output file: {e}")
+                self.output_handle = None
         
     def __enter__(self):
         return self
@@ -42,6 +54,9 @@ class WordlistSplitter:
                     proc.kill()
                 except:
                     pass
+        
+        # Clear process list
+        self.processes = []
         
         # Remove temporary files
         if self.temp_dir and os.path.exists(self.temp_dir):
@@ -110,6 +125,21 @@ class WordlistSplitter:
             # Display output in real-time
             for line in proc.stdout:
                 print(f"[#{index + 1}] {line.rstrip()}")
+                
+                # Check if success string is found
+                if self.stop_on_success and self.stop_on_success in line:
+                    print(f"\n[!] SUCCESS STRING FOUND in attack #{index + 1}!")
+                    print(f"[!] String detected: '{self.stop_on_success}'")
+                    print(f"[!] Stopping all attacks...")
+                    self.success_found = True
+                    
+                    # Terminate all running processes
+                    self.cleanup()
+                    break
+                
+                # Check if another attack found success
+                if self.success_found:
+                    break
             
             proc.wait()
             
@@ -158,6 +188,11 @@ class WordlistSplitter:
         for i, split_file in enumerate(self.split_files):
             index, returncode = self.execute_command(command_template, split_file, i)
             results.append((index, returncode))
+            
+            # Stop if success was found
+            if self.success_found:
+                print(f"[!] Stopping sequential execution due to success string found")
+                break
         
         return results
 
@@ -189,6 +224,9 @@ Usage examples:
   
   # Sequential mode (one attack at a time)
   %(prog)s -c "netexec smb 10.10.10.10 -u admin -p <%WORDLIST%>" -w pass.txt -s 5 --sequential
+  
+  # Auto-stop when success string is found
+  %(prog)s -c "netexec smb 10.10.10.10 -u users.txt -p <%WORDLIST%>" -w pass.txt -s 10 -lf "STATUS_LOGON_SUCCESS"
         """
     )
     
@@ -229,6 +267,11 @@ Usage examples:
         help='Maximum number of simultaneous parallel attacks'
     )
     
+    parser.add_argument(
+        '-lf', '--looking-for',
+        help='Stop all attacks when this string is found in output (e.g., "STATUS_LOGON_SUCCESS")'
+    )
+    
     args = parser.parse_args()
     
     # Check that placeholder is in the command
@@ -249,8 +292,12 @@ Usage examples:
     print("  Bruteforce Wordlist Splitter")
     print("=" * 70)
     
+    if args.looking_for:
+        print(f"[!] Auto-stop enabled: will stop all attacks when '{args.looking_for}' is found")
+        print()
+    
     try:
-        with WordlistSplitter(args.wordlist, args.split, args.placeholder) as splitter:
+        with WordlistSplitter(args.wordlist, args.split, args.placeholder, args.looking_for) as splitter:
             # Split the wordlist
             splitter.split_wordlist()
             
@@ -264,6 +311,10 @@ Usage examples:
             print("\n" + "=" * 70)
             print("  Attack Summary")
             print("=" * 70)
+            
+            if splitter.success_found:
+                print(f"[!] ALL ATTACKS STOPPED - Success string '{args.looking_for}' was found!")
+                print()
             
             success_count = sum(1 for _, rc in results if rc == 0)
             failed_count = len(results) - success_count
